@@ -92,14 +92,6 @@ if __name__ == '__main__':
     logging.info(f"Saving initial checkpoint to: {args.output_dir}")
     model.save_pretrained(args.output_dir)
 
-    # model parameters
-    param_optimizer = list(model.named_parameters())
-    no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
-        {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-    ]
-
     # wrap model with TPU stuff
     model = tpu_dp.DataParallel(model, device_ids=devices)
 
@@ -118,6 +110,14 @@ if __name__ == '__main__':
     # define callback
     def _train_one_epoch(model, loader, device, context):
         """ Called by torch_xla_py.data_parallel. This function is executed on each core of the TPU once per epoch"""
+
+        # model parameters
+        param_optimizer = list(model.named_parameters())
+        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+            {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        ]
 
         # one optimizer and scheduler per TPU core. Both objects are saved in `context` to be reused the next epoch
         optimizer = context.getattr_or('optimizer', AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon, betas=tuple(args.betas)))
