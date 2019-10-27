@@ -54,6 +54,14 @@ if __name__ == '__main__':
     parser.add_argument('--tpu_report', action='store_true', help="Print xla metric report")
     args = parser.parse_args()
 
+    # logging setup
+    log_format = '%(asctime)-10s: %(message)s'
+    if args.log_file is not None and args.log_file != "":
+        logging.basicConfig(level=logging.INFO, filename=args.log_file, filemode='w', format=log_format)
+        logging.warning(f'This will get logged to file: {args.log_file}')
+    else:
+        logging.basicConfig(level=logging.INFO, format=log_format)
+
     # create output dir
     if os.path.exists(args.output_dir):
         y_or_n = input(f'Output Dir {args.output_dir} already exists.  Write to same dir? (y/n)')
