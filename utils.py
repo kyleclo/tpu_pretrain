@@ -1,4 +1,4 @@
-from argparse import ArgumentParser
+
 import os
 from pathlib import Path
 import shutil
@@ -14,76 +14,6 @@ import torch
 from torch.utils.data import Dataset
 from pytorch_transformers.modeling_utils import WEIGHTS_NAME
 
-def init(args):
-    # init logger
-    log_format = '%(asctime)-10s: %(message)s'
-    if args.log_file is not None and args.log_file != "":
-        Path(args.log_file).parent.mkdir(parents=True, exist_ok=True)
-        logging.basicConfig(level=logging.INFO, filename=args.log_file, filemode='w', format=log_format)
-        logging.warning(f'This will get logged to file: {args.log_file}')
-    else:
-        logging.basicConfig(level=logging.INFO, format=log_format)
-
-    # create output dir
-    if args.output_dir.is_dir() and list(args.output_dir.iterdir()):
-        logging.warning(f"Output directory ({args.output_dir}) already exists and is not empty!")
-    assert 'bert' in args.output_dir.name, \
-        '''Output dir name has to contain `bert` or `roberta` for AutoModel.from_pretrained to correctly infer the model type'''
-
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-
-    # set random seeds
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-
-
-def get_args_parser_with_general_args():
-    parser = ArgumentParser()
-    parser.add_argument('--pregenerated_data', type=Path, required=True)
-    parser.add_argument('--output_dir', type=Path, required=True)
-
-    parser.add_argument("--bert_model", type=str, required=True, help="Bert pre-trained model. Either a path to the model dir or "
-                             "selected from list: bert-base-uncased, bert-large-uncased, bert-base-cased, "
-                             "bert-base-multilingual, bert-base-chinese, roberta-base, roberta-large")
-    parser.add_argument("--reduce_memory", action="store_true",
-                        help="Store training data as on-disc memmaps to massively reduce memory usage")
-    parser.add_argument("--epochs", type=int, default=3, help="Number of epochs to train for")
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=1, help="Number of gradient accumulation steps")
-    parser.add_argument("--betas",
-                        nargs=2,
-                        type=float,
-                        default=[0.9, 0.98],
-                        help="tuple specifying AdamW beta weights")
-    parser.add_argument("--train_batch_size",
-                        default=32,
-                        type=int,
-                        help="Total batch size for training.")
-    parser.add_argument("--warmup_steps", 
-                        default=0, 
-                        type=int,
-                        help="Linear warmup over warmup_steps.")
-    parser.add_argument("--warmup_proportion",
-                        type=float,
-                        required=False,
-                        help="Linear warmup over warmup_steps.")
-    parser.add_argument("--adam_epsilon", 
-                        default=1e-8, 
-                        type=float,
-                        help="Epsilon for Adam optimizer.")
-    parser.add_argument("--learning_rate",
-                        default=3e-5,
-                        type=float,
-                        help="The initial learning rate for Adam.")
-    parser.add_argument('--seed',
-                        type=int,
-                        default=42,
-                        help="random seed for initialization")
-    parser.add_argument('--log-file', default=None, type=str)
-    parser.add_argument('--track_learning_rate',
-                        action='store_true',
-                        help="if true, will track learning rate in progress bar.")
-    return parser
 
 
 def save_checkpoint(model, epoch, output_dir):
@@ -99,7 +29,7 @@ def save_checkpoint(model, epoch, output_dir):
     torch.save(state_dict, output_model_file)
 
 
-def prepare_last_checkpoint(pretrained_model_name_or_path):
+def prepare_start_epoch(pretrained_model_name_or_path: str) -> int:
     if not os.path.isdir(pretrained_model_name_or_path):
         return 0  # It is probabaly a model name, not an input directory
 
@@ -156,14 +86,14 @@ def get_dataset_stats(args, n_tpu):
         # The modulo takes into account the fact that we may loop over limited epochs of data
         total_train_examples += samples_per_epoch[i % len(samples_per_epoch)]
 
-    num_train_optimization_steps = compute_num_steps_in_epoch(total_train_examples,
-                                                              args.train_batch_size,
-                                                              args.gradient_accumulation_steps,
-                                                              n_tpu)
+    num_train_optimization_steps = compute_num_updates_in_epoch(total_train_examples,
+                                                                args.train_batch_size,
+                                                                args.gradient_accumulation_steps,
+                                                                n_tpu)
     return num_data_epochs, num_train_optimization_steps
 
 
-def compute_num_steps_in_epoch(num_samples: int, batch_size: int, grad_accum_steps: int, n_tpu: int):
+def compute_num_updates_in_epoch(num_samples: int, batch_size: int, grad_accum_steps: int, n_tpu: int):
     return int(num_samples / batch_size / grad_accum_steps / n_tpu)
 
 
