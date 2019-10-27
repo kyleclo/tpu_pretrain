@@ -83,7 +83,6 @@ if __name__ == '__main__':
     model = AutoModelWithLMHead.from_pretrained(args.bert_model)  # Only Masked Language Modeling
     logging.info(f"Saving initial checkpoint to: {args.output_dir}")
     model.save_pretrained(args.output_dir)
-    model = tpu_dp.DataParallel(model, device_ids=devices)
 
     # model parameters
     param_optimizer = list(model.named_parameters())
@@ -92,6 +91,9 @@ if __name__ == '__main__':
         {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
         {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
     ]
+
+    # wrap model with TPU stuff
+    model = tpu_dp.DataParallel(model, device_ids=devices)
 
     # expected total number of updates
     total_num_updates = utils.compute_num_updates_in_epoch(num_samples=args.total_num_training_examples, batch_size=args.train_batch_size, grad_accum_steps=args.gradient_accumulation_steps, n_tpu=n_tpu)
