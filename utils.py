@@ -63,36 +63,6 @@ def prepare_start_epoch(pretrained_model_name_or_path: str) -> int:
     return start_epoch
 
 
-def get_dataset_stats(args, n_tpu):
-    samples_per_epoch = []
-    for i in range(args.epochs):
-        epoch_file = args.pregenerated_data / f"epoch_{i}.json"
-        metrics_file = args.pregenerated_data / f"epoch_{i}_metrics.json"
-        if epoch_file.is_file() and metrics_file.is_file():
-            metrics = json.loads(metrics_file.read_text())
-            samples_per_epoch.append(metrics['num_training_examples'])
-        else:
-            if i == 0:
-                exit("No training data was found!")
-            print(f"Warning! There are fewer epochs of pregenerated data ({i}) than training epochs ({args.epochs}).")
-            print("This script will loop over the available data, but training diversity may be negatively impacted.")
-            num_data_epochs = i
-            break
-    else:
-        num_data_epochs = args.epochs
-
-    total_train_examples = 0
-    for i in range(args.start_epoch, args.epochs):
-        # The modulo takes into account the fact that we may loop over limited epochs of data
-        total_train_examples += samples_per_epoch[i % len(samples_per_epoch)]
-
-    num_train_optimization_steps = compute_num_updates_in_epoch(total_train_examples,
-                                                                args.train_batch_size,
-                                                                args.gradient_accumulation_steps,
-                                                                n_tpu)
-    return num_data_epochs, num_train_optimization_steps
-
-
 def compute_num_updates_in_epoch(num_samples: int, batch_size: int, grad_accum_steps: int, n_tpu: int):
     return int(num_samples / batch_size / grad_accum_steps / n_tpu)
 
@@ -136,10 +106,11 @@ class PregeneratedDataset(Dataset):
         self.tokenizer = tokenizer
         self.epoch = epoch
         self.data_epoch = epoch % num_data_epochs
-        data_file = training_path / f"epoch_{self.data_epoch}.json"
-        metrics_file = training_path / f"epoch_{self.data_epoch}_metrics.json"
-        assert data_file.is_file() and metrics_file.is_file()
-        metrics = json.loads(metrics_file.read_text())
+        data_file = os.path.join(training_path, f"epoch_{self.data_epoch}.json")
+        metrics_file = os.path.join(training_path, f"epoch_{self.data_epoch}_metrics.json")
+        assert os.path.exists(data_file) and os.path.exists(metrics_file)
+        with open(metrics_file) as f_in:
+            metrics = json.load(f_in)
         num_samples = metrics['num_training_examples']
         seq_len = metrics['max_seq_len']
         self.temp_dir = None
@@ -165,7 +136,7 @@ class PregeneratedDataset(Dataset):
             lm_label_ids = np.full(shape=(num_samples, seq_len), dtype=np.int32, fill_value=-1)
             is_nexts = np.zeros(shape=(num_samples,), dtype=np.bool)
         logging.info(f"Loading training examples for epoch {epoch} from {data_file}")
-        with data_file.open() as f:
+        with open(data_file) as f:
             for i, line in enumerate(tqdm(f, total=num_samples, desc="Training examples")):
                 line = line.strip()
                 example = json.loads(line)
