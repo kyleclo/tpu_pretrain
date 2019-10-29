@@ -27,11 +27,6 @@ RobertaModel.forward = RobertaModel_forward  # RobertaModel.forward has a `.item
 
 
 if __name__ == '__main__':
-    class Args:
-        pass
-    args = Args()
-    args.bert_model = 'roberta-base'
-
     parser = ArgumentParser()
     parser.add_argument('--pregenerated_data', type=str, required=True)
     parser.add_argument('--output_dir', type=str, required=True)
@@ -84,6 +79,7 @@ if __name__ == '__main__':
 
     # load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.bert_model)
+    logging.info(f"Saving tokenizer to: {args.output_dir}")
     tokenizer.save_pretrained(args.output_dir)
 
     # load model
@@ -121,7 +117,10 @@ if __name__ == '__main__':
 
         # one optimizer and scheduler per TPU core. Both objects are saved in `context` to be reused the next epoch
         optimizer = context.getattr_or('optimizer', AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon, betas=tuple(args.betas)))
-        scheduler = context.getattr_or('scheduler', WarmupLinearSchedule(optimizer, warmup_steps=warmup_updates, t_total=total_num_updates, last_epoch=args.scheduler_last_epoch))
+        scheduler = context.getattr_or('scheduler', WarmupLinearSchedule(optimizer, warmup_steps=warmup_updates, t_total=total_num_updates))
+
+        # restart
+        scheduler.step(args.scheduler_last_epoch)
 
         tr_loss = None
         tracker = tpu_xm.RateTracker()
