@@ -30,13 +30,13 @@ ctpu up -tf-version=pytorch-0.5 -name=[lm_tpu] -tpu-size=[v3-8] -tpu-only -zone=
 git clone https://github.com/allenai/tpu_pretrain.git
 cd tpu_pretrain
 conda env list
-conda activate pytorch-0.5  # use the prerelease pytorch-0.5
+conda activate torch-xla-0.5
 export XRT_TPU_CONFIG="tpu_worker;0;$TPU_IP_ADDRESS:8470"  # where $TPU_IP_ADDRESS is the IP of the Cloud TPU created above
 ```
 
 - To test that everything is working fine, run the mnist example
 ```
-cd /usr/share/torch-xla-0.1/pytorch/xla
+cd /usr/share/torch-xla-0.5/pytorch/xla
 python test/test_train_mnist.py
 ```
 
