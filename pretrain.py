@@ -83,7 +83,7 @@ if __name__ == '__main__':
     tokenizer.save_pretrained(args.output_dir)
 
     # load model
-    start_epoch = utils.prepare_start_epoch(args.bert_model)
+    start_epoch = args.scheduler_last_epoch
     model = AutoModelWithLMHead.from_pretrained(args.bert_model)  # Only Masked Language Modeling
     logging.info(f"Saving initial checkpoint to: {args.output_dir}")
     model.save_pretrained(args.output_dir)
@@ -92,7 +92,10 @@ if __name__ == '__main__':
     model = tpu_dp.DataParallel(model, device_ids=devices)
 
     # expected total number of updates
-    total_num_updates = utils.compute_num_updates_in_epoch(num_samples=args.total_num_training_examples, batch_size=args.train_batch_size, grad_accum_steps=args.gradient_accumulation_steps, n_tpu=n_tpu)
+    total_num_updates = utils.compute_num_updates_in_epoch(num_samples=args.total_num_training_examples,
+                                                           batch_size=args.train_batch_size,
+                                                           grad_accum_steps=args.gradient_accumulation_steps,
+                                                           n_tpu=n_tpu)
 
     # expected number of warmup updates
     if args.warmup_proportion is not None:
@@ -120,7 +123,7 @@ if __name__ == '__main__':
         scheduler = context.getattr_or('scheduler', WarmupLinearSchedule(optimizer, warmup_steps=warmup_updates, t_total=total_num_updates))
 
         # restart
-        scheduler.step(args.scheduler_last_epoch)
+        scheduler.step(start_epoch)
 
         tr_loss = None
         tracker = tpu_xm.RateTracker()
