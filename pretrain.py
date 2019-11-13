@@ -36,7 +36,7 @@ if __name__ == '__main__':
     parser.add_argument('--total_num_training_examples', type=int, required=True)
     parser.add_argument("--gradient_accumulation_steps", type=int, required=True, help="Number of gradient accumulation steps")
     parser.add_argument("--betas", nargs=2, type=float, required=True, help="tuple specifying AdamW beta weights")
-    parser.add_argument("--train_batch_size", type=int, required=True, help="Total batch size for training.")
+    parser.add_argument("--per_tpu_train_batch_size", type=int, required=True, help="Total batch size for training.")
     parser.add_argument("--warmup_steps", type=int, help="Linear warmup over warmup_steps.")
     parser.add_argument("--warmup_proportion", type=float, help="Linear warmup over warmup_steps.")
     parser.add_argument("--adam_epsilon", type=float, required=True, help="Epsilon for Adam optimizer.")
@@ -83,7 +83,6 @@ if __name__ == '__main__':
     tokenizer.save_pretrained(args.output_dir)
 
     # load model
-    start_epoch = args.scheduler_last_epoch
     model = AutoModelWithLMHead.from_pretrained(args.bert_model)  # Only Masked Language Modeling
     logging.info(f"Saving initial checkpoint to: {args.output_dir}")
     model.save_pretrained(args.output_dir)
@@ -93,7 +92,7 @@ if __name__ == '__main__':
 
     # expected total number of updates
     total_num_updates = utils.compute_num_updates_in_epoch(num_samples=args.total_num_training_examples,
-                                                           batch_size=args.train_batch_size,
+                                                           batch_size=args.per_tpu_train_batch_size,
                                                            grad_accum_steps=args.gradient_accumulation_steps,
                                                            n_tpu=n_tpu)
 
@@ -123,7 +122,8 @@ if __name__ == '__main__':
         scheduler = context.getattr_or('scheduler', WarmupLinearSchedule(optimizer, warmup_steps=warmup_updates, t_total=total_num_updates))
 
         # restart
-        scheduler.step(start_epoch)
+        scheduler.step(args.scheduler_last_epoch)
+        logging.info(f'Restarting scheduler LR to: {scheduler.get_last_lr()}')
 
         tr_loss = None
         tracker = tpu_xm.RateTracker()
@@ -136,13 +136,14 @@ if __name__ == '__main__':
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
             loss.backward()
-            tracker.add(args.train_batch_size)
+            tracker.add(args.per_tpu_train_batch_size)
 
             tr_loss = loss * args.gradient_accumulation_steps if step == 0 else  tr_loss + loss * args.gradient_accumulation_steps
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 tpu_xm.optimizer_step(optimizer)
                 scheduler.step()
                 optimizer.zero_grad()
+                logging.info(f'  Adjusted scheduler LR to {scheduler.get_last_lr()}')
 
         # since checkpointing happens each epoch, we only need to save the scheduler state at end of each epoch
         logging.info(f'Scheduler last_epoch {scheduler.last_epoch}')
@@ -151,17 +152,18 @@ if __name__ == '__main__':
 
 
     # each epoch
+    start_epoch = utils.prepare_start_epoch(args.bert_model)
     for epoch in range(start_epoch, args.epochs):
         # TODO: it's dumb that this class needs to re-derive which file its using. pass in directly
         # load training set corresponding to this epoch into memory
         epoch_dataset = utils.PregeneratedDataset(epoch=epoch, training_path=args.pregenerated_data, tokenizer=tokenizer, num_data_epochs=args.epochs, reduce_memory=args.reduce_memory)
         train_sampler = RandomSampler(epoch_dataset)
-        train_dataloader = DataLoader(epoch_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
+        train_dataloader = DataLoader(epoch_dataset, sampler=train_sampler, batch_size=args.per_tpu_train_batch_size)
 
-        num_updates = utils.compute_num_updates_in_epoch(num_samples=train_sampler.num_samples, batch_size=args.train_batch_size, grad_accum_steps=args.gradient_accumulation_steps, n_tpu=n_tpu)
+        num_updates = utils.compute_num_updates_in_epoch(num_samples=train_sampler.num_samples, batch_size=args.per_tpu_train_batch_size, grad_accum_steps=args.gradient_accumulation_steps, n_tpu=n_tpu)
         logging.info(f"""
         Training on epoch {epoch} (i.e. {train_sampler.num_samples} samples).
-        With batch size {args.train_batch_size} and {args.gradient_accumulation_steps} gradient accumulation steps,
+        With per TPU batch size {args.per_tpu_train_batch_size} and {args.gradient_accumulation_steps} gradient accumulation steps,
              expect {num_updates} gradient updates when split across {n_tpu} TPUs. 
         """)
 
