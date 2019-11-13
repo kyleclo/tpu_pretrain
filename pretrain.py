@@ -122,6 +122,7 @@ if __name__ == '__main__':
         scheduler = context.getattr_or('scheduler', WarmupLinearSchedule(optimizer, warmup_steps=warmup_updates, t_total=total_num_updates))
 
         # restart
+        # TODO: scheduler reset to 0 each epoch
         scheduler.step(args.scheduler_last_epoch)
         logging.info(f'Restarting scheduler LR to: {scheduler.get_last_lr()}')
 
@@ -143,7 +144,7 @@ if __name__ == '__main__':
                 tpu_xm.optimizer_step(optimizer)
                 scheduler.step()
                 optimizer.zero_grad()
-                logging.info(f'  Adjusted scheduler LR to {scheduler.get_last_lr()}')
+                # logging.info(f'  Adjusted scheduler LR to {scheduler.get_last_lr()}')
 
         # since checkpointing happens each epoch, we only need to save the scheduler state at end of each epoch
         logging.info(f'Scheduler last_epoch {scheduler.last_epoch}')
@@ -172,6 +173,9 @@ if __name__ == '__main__':
 
         logging.info(f'Epoch {epoch} took {round(time.time() - start, 2)} seconds. Average loss: {sum(losses)/len(losses)}')
         utils.save_checkpoint(model._models[0], epoch, args.output_dir)
+
+        logging.info(f'Adding {num_updates} steps to scheduler')
+        args.scheduler_last_epoch += num_updates
 
     if args.tpu_report:
         logging.info(torch_xla._XLAC._xla_metrics_report())
