@@ -6,12 +6,16 @@ Use once to figure out the number of training examples
 
 import os
 import json
+import glob
 
 from tqdm import tqdm
 
-DATA_DIR = '/disk2/med-merged/'
+DATA_DIR = '/disk3/realnews-merged-batches/'
+LAST_EPOCH = 1200
 
-fnames = sorted(os.listdir(DATA_DIR))
+import re
+
+fnames = sorted(glob.glob(f'{DATA_DIR}/*'), key=lambda s: int(re.match(r'.*epoch_([0-9]+).*', s).group(1)))
 epoch_files = []
 metric_files = []
 for fname in fnames:
@@ -19,6 +23,8 @@ for fname in fnames:
         metric_files.append(os.path.join(DATA_DIR, fname))
     else:
         epoch_files.append(os.path.join(DATA_DIR, fname))
+    if re.match(r'.*epoch_([0-9]+).*', fname).group(1) == LAST_EPOCH:
+        break
 assert len(epoch_files) == len(metric_files)
 
 num_training_examples_per_epoch = []
